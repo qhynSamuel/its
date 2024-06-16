@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import pulp
+import os
 
 app = Flask(__name__)
 
@@ -38,14 +39,6 @@ sales_df = generate_sales_data(10)
 # Function to update and retrain the model
 def update_and_train_model():
     global sales_df
-
-    # Generate new sales data for the new week
-    new_week = sales_df['Week'].max() + 1
-    new_sales_data = generate_sales_data(1)
-    new_sales_data['Week'] = new_week
-
-    # Append new sales data to the existing sales data
-    sales_df = pd.concat([sales_df, new_sales_data], ignore_index=True)
 
     # Merge recipe data and sales data
     merged_data = pd.merge(sales_df, recipe_df, on='Dish')
@@ -154,4 +147,5 @@ def manage_inventory():
     return jsonify(inventory)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
