@@ -71,6 +71,10 @@ def train_model():
     ingredients = list(X.columns)
     inventory = {ingredients[i]: next_week_inventory[i] for i in range(len(ingredients))}
     days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
+    
+@app.route('/')
+def home():
+    return "Welcome to the Inventory Management System!"
 
 @app.route('/predict', methods=['POST'])
 def predict():
