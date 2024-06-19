@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import pulp
@@ -75,35 +75,55 @@ inventory_model = InventoryModel()
 def index():
     return "Hello, World! The Flask app is running."
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['POST', 'GET'])
 def predict():
-    try:
-        data = request.json
-        app.logger.debug("Received data for prediction: %s", data)
-        # Process input data
-        X_input = pd.DataFrame([data])
-        prediction = inventory_model.model.predict(X_input)
-        app.logger.debug("Prediction result: %s", prediction.tolist())
-        return jsonify(prediction.tolist())
-    except Exception as e:
-        app.logger.error("Error in /predict: %s", e)
-        return "Internal Server Error", 500
+    if request.method == 'POST':
+        try:
+            data = request.json
+            app.logger.debug("Received data for prediction: %s", data)
+            # Process input data
+            X_input = pd.DataFrame([data])
+            prediction = inventory_model.model.predict(X_input)
+            app.logger.debug("Prediction result: %s", prediction.tolist())
+            return jsonify(prediction.tolist())
+        except Exception as e:
+            app.logger.error("Error in /predict: %s", e, exc_info=True)
+            return "Internal Server Error", 500
+    else:
+        # Render an HTML form for prediction
+        return render_template_string("""
+            <form method="post" action="/predict">
+                <textarea name="data" rows="10" cols="30"></textarea>
+                <br>
+                <input type="submit" value="Predict">
+            </form>
+        """)
 
-@app.route('/manage_inventory', methods=['POST'])
+@app.route('/manage_inventory', methods=['POST', 'GET'])
 def manage_inventory():
-    try:
-        data = request.json
-        app.logger.debug("Received data for manage_inventory: %s", data)
-        inventory = data['inventory']
-        days_in_inventory = data['days_in_inventory']
-        
-        # Manage inventory logic
-        updated_inventory = manage_inventory_logic(inventory, days_in_inventory, inventory_model.recipes)
-        
-        return jsonify(updated_inventory)
-    except Exception as e:
-        app.logger.error("Error in /manage_inventory: %s", e)
-        return "Internal Server Error", 500
+    if request.method == 'POST':
+        try:
+            data = request.json
+            app.logger.debug("Received data for manage_inventory: %s", data)
+            inventory = data['inventory']
+            days_in_inventory = data['days_in_inventory']
+            
+            # Manage inventory logic
+            updated_inventory = manage_inventory_logic(inventory, days_in_inventory, inventory_model.recipes)
+            
+            return jsonify(updated_inventory)
+        except Exception as e:
+            app.logger.error("Error in /manage_inventory: %s", e, exc_info=True)
+            return "Internal Server Error", 500
+    else:
+        # Render an HTML form for manage_inventory
+        return render_template_string("""
+            <form method="post" action="/manage_inventory">
+                <textarea name="data" rows="10" cols="30"></textarea>
+                <br>
+                <input type="submit" value="Manage Inventory">
+            </form>
+        """)
 
 def manage_inventory_logic(inventory, days_in_inventory, recipes):
     days = 70  # Simulate 70 days
@@ -169,6 +189,6 @@ def manage_inventory_logic(inventory, days_in_inventory, recipes):
     
     return inventory
 
-if __name__ == '__main__':
+if __name__:
     port = int(os.environ.get("PORT", 5001))
     app.run(debug=True, host='0.0.0.0', port=port)
