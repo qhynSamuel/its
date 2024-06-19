@@ -1,132 +1,91 @@
+from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
-from flask import Flask, request, jsonify, render_template_string
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import pulp
-import os
-import joblib
-import logging
 
 app = Flask(__name__)
 
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)
+# Recipe data
+recipes = {
+    'Kung Pao Chicken': {'Chicken': 200, 'Peanuts': 50, 'Bell Pepper': 30, 'Chili': 10},
+    'Mapo Tofu': {'Tofu': 250, 'Ground Beef': 100, 'Sichuan Peppercorn': 5},
+    'Braised Pork': {'Pork': 300, 'Soy Sauce': 10, 'Sugar': 20},
+    'Hot and Sour Soup': {'Egg': 2, 'Wood Ear Mushroom': 20, 'Vinegar': 15},
+    'Steamed Fish': {'Fish': 400, 'Ginger': 10, 'Cooking Wine': 10}
+}
 
-class InventoryModel:
-    def __init__(self):
-        self.recipes = {
-            'Kung Pao Chicken': {'Chicken': 200, 'Peanuts': 50, 'Bell Pepper': 30, 'Chili': 10},
-            'Mapo Tofu': {'Tofu': 250, 'Ground Beef': 100, 'Sichuan Peppercorn': 5},
-            'Braised Pork': {'Pork': 300, 'Soy Sauce': 10, 'Sugar': 20},
-            'Hot and Sour Soup': {'Egg': 2, 'Wood Ear Mushroom': 20, 'Vinegar': 15},
-            'Steamed Fish': {'Fish': 400, 'Ginger': 10, 'Cooking Wine': 10}
-        }
-        self.recipe_df = pd.DataFrame(self.recipes).T.reset_index()
-        self.recipe_df = self.recipe_df.rename(columns={'index': 'Dish'})
-        self.sales_data = self.generate_sales_data(10)
-        self.model, self.X = self.update_and_train_model()
+# Initial inventory and days in inventory
+inventory = {}
+days_in_inventory = {}
+model = None
 
-    def generate_sales_data(self, weeks):
-        sales_data = []
-        np.random.seed(42)
-        for week in range(weeks):
-            for dish in self.recipes.keys():
-                sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
-                sales_data.append([week + 1, dish, sales_count])
-        return pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
+def train_model():
+    global model, inventory, days_in_inventory
+    
+    # Simulate weekly sales data
+    np.random.seed(42)
+    weeks = 10  # Assume 10 weeks of data
+    sales_data = []
 
-    def update_and_train_model(self):
-        sales_df = self.sales_data
+    for week in range(weeks):
+        for dish in recipes.keys():
+            sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
+            sales_data.append([week + 1, dish, sales_count])
 
-        # Merge recipe data and sales data
-        merged_data = pd.merge(sales_df, self.recipe_df, on='Dish')
+    sales_df = pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
 
-        # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
-        for ingredient in self.recipe_df.columns[1:]:
-            merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
+    # Create recipe DataFrame
+    recipe_df = pd.DataFrame(recipes).T.reset_index()
+    recipe_df = recipe_df.rename(columns={'index': 'Dish'})
 
-        # Ensure there are no missing values and the types are correct
-        merged_data = merged_data.fillna(0)
+    # Merge recipe data and sales data
+    merged_data = pd.merge(sales_df, recipe_df, on='Dish')
 
-        # Calculate total weekly ingredient usage
-        weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
+    # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
+    for ingredient in recipe_df.columns[1:]:
+        merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
 
-        # Select features and target variables
-        X = weekly_usage.drop(columns=['Week', 'Sales'])
-        y = weekly_usage.drop(columns=['Week'])
+    # Ensure there are no missing values and the types are correct
+    merged_data = merged_data.fillna(0)
 
-        # Split dataset
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Calculate total weekly ingredient usage
+    weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
 
-        # Train random forest model
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
+    # Select features and target variables
+    X = weekly_usage.drop(columns=['Week'])
+    y = weekly_usage.drop(columns=['Week', 'Sales'])
 
-        # Save the trained model
-        joblib.dump(model, 'inventory_model.pkl')
+    # Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        return model, X
+    # Train random forest model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
 
-# Initialize the inventory model
-inventory_model = InventoryModel()
+    # Predict next week's inventory demand
+    next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
 
-@app.route('/')
-def index():
-    return "Hello, World! The Flask app is running."
+    # Initialize inventory based on the prediction
+    ingredients = list(X.columns)
+    inventory = {ingredients[i]: next_week_inventory[i] for i in range(len(ingredients))}
+    days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
 
-@app.route('/predict', methods=['POST', 'GET'])
+@app.route('/predict', methods=['POST'])
 def predict():
-    if request.method == 'POST':
-        try:
-            data = request.json
-            app.logger.debug("Received data for prediction: %s", data)
-            # Process input data
-            X_input = pd.DataFrame([data])
-            prediction = inventory_model.model.predict(X_input)
-            app.logger.debug("Prediction result: %s", prediction.tolist())
-            return jsonify(prediction.tolist())
-        except Exception as e:
-            app.logger.error("Error in /predict: %s", e, exc_info=True)
-            return "Internal Server Error", 500
-    else:
-        # Render an HTML form for prediction
-        return render_template_string("""
-            <form method="post" action="/predict">
-                <textarea name="data" rows="10" cols="30"></textarea>
-                <br>
-                <input type="submit" value="Predict">
-            </form>
-        """)
+    # Predict next week's inventory demand based on current data
+    data = request.json
+    X = pd.DataFrame([data['features']])
+    prediction = model.predict(X)[0]
+    return jsonify({'prediction': prediction.tolist()})
 
-@app.route('/manage_inventory', methods=['POST', 'GET'])
-def manage_inventory():
-    if request.method == 'POST':
-        try:
-            data = request.json
-            app.logger.debug("Received data for manage_inventory: %s", data)
-            inventory = data['inventory']
-            days_in_inventory = data['days_in_inventory']
-            
-            # Manage inventory logic
-            updated_inventory = manage_inventory_logic(inventory, days_in_inventory, inventory_model.recipes)
-            
-            return jsonify(updated_inventory)
-        except Exception as e:
-            app.logger.error("Error in /manage_inventory: %s", e, exc_info=True)
-            return "Internal Server Error", 500
-    else:
-        # Render an HTML form for manage_inventory
-        return render_template_string("""
-            <form method="post" action="/manage_inventory">
-                <textarea name="data" rows="10" cols="30"></textarea>
-                <br>
-                <input type="submit" value="Manage Inventory">
-            </form>
-        """)
-
-def manage_inventory_logic(inventory, days_in_inventory, recipes):
-    days = 70  # Simulate 70 days
+@app.route('/promote', methods=['POST'])
+def promote():
+    # Generate promotion strategy
+    data = request.json
+    inventory = data['inventory']
+    days_in_inventory = data['days_in_inventory']
     profits = {
         'Kung Pao Chicken': 20,
         'Mapo Tofu': 15,
@@ -141,54 +100,40 @@ def manage_inventory_logic(inventory, days_in_inventory, recipes):
         'Egg': 21, 'Wood Ear Mushroom': 180, 'Vinegar': 365,
         'Fish': 5, 'Ginger': 30, 'Cooking Wine': 365
     }
-    
-    for day in range(1, days + 1):
-        # Update days in inventory
-        days_in_inventory = {ingredient: days_in_inventory[ingredient] + 1 for ingredient in days_in_inventory.keys()}
-        
-        # Calculate shelf life factor
-        shelf_life_factor = {
-            ingredient: max(0, 1 - days_in_inventory[ingredient] / shelf_life[ingredient])
-            for ingredient in shelf_life.keys()
-        }
-        
-        # Build linear programming problem
-        prob = pulp.LpProblem("PromotionPlan", pulp.LpMaximize)
-        
-        # Decision variables: promotion quantity for each dish
-        promotion_vars = {dish: pulp.LpVariable(dish, lowBound=0, cat='Integer') for dish in recipes.keys()}
-        
-        # Objective function: maximize weighted profit
-        profit_weight = 0.7
-        shelf_life_weight = 0.3
-        
-        prob += pulp.lpSum(profit_weight * profits[dish] * promotion_vars[dish] +
-                           shelf_life_weight * pulp.lpSum(shelf_life_factor[ingredient] * promotion_vars[dish] * recipes[dish].get(ingredient, 0)
-                                                          for ingredient in recipes[dish].keys())
-                           for dish in recipes.keys())
-        
-        # Constraints: promotion quantity for each ingredient cannot exceed its inventory
-        for ingredient in inventory.keys():
-            prob += pulp.lpSum(promotion_vars[dish] * recipes[dish].get(ingredient, 0) for dish in recipes.keys()) <= inventory[ingredient]
-        
-        # Solve problem
-        prob.solve()
-        
-        # Output suggested promotion quantity
-        promotion_plan = {var.name: var.varValue for var in prob.variables() if var.varValue > 0}
-        
-        # Simulate actual sales and update inventory
-        for dish, promotions in promotion_plan.items():
-            for ingredient, amount in recipes[dish].items():
-                inventory[ingredient] -= amount * promotions
-        
-        # Remove expired ingredients
-        for ingredient, days in days_in_inventory.items():
-            if days > shelf_life[ingredient]:
-                inventory[ingredient] = 0
-    
-    return inventory
 
-if __name__:
-    port = int(os.environ.get("PORT", 5001))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    # Calculate shelf life factor
+    shelf_life_factor = {
+        ingredient: max(0, 1 - days_in_inventory[ingredient] / shelf_life[ingredient])
+        for ingredient in shelf_life.keys()
+    }
+
+    # Build linear programming problem
+    prob = pulp.LpProblem("PromotionPlan", pulp.LpMaximize)
+
+    # Decision variables: promotion quantity for each dish
+    promotion_vars = {dish: pulp.LpVariable(dish, lowBound=0, cat='Integer') for dish in recipes.keys()}
+
+    # Objective function: maximize weighted profit
+    profit_weight = 0.7
+    shelf_life_weight = 0.3
+
+    prob += pulp.lpSum(profit_weight * profits[dish] * promotion_vars[dish] +
+                       shelf_life_weight * pulp.lpSum(shelf_life_factor[ingredient] * promotion_vars[dish] * recipes[dish].get(ingredient, 0)
+                                                      for ingredient in recipes[dish].keys())
+                       for dish in recipes.keys())
+
+    # Constraints: promotion quantity for each ingredient cannot exceed its inventory
+    for ingredient in inventory.keys():
+        prob += pulp.lpSum(promotion_vars[dish] * recipes[dish].get(ingredient, 0) for dish in recipes.keys()) <= inventory[ingredient]
+
+    # Solve problem
+    prob.solve()
+
+    # Generate promotion plan
+    promotion_plan = {var.name: var.varValue for var in promotion_vars.values() if var.varValue > 0}
+
+    return jsonify({'promotion_plan': promotion_plan})
+
+if __name__ == '__main__':
+    train_model()
+    app.run(debug=True)
