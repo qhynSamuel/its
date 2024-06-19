@@ -3,9 +3,9 @@ import numpy as np
 from flask import Flask, request, jsonify
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
 import pulp
 import os
+import joblib
 
 app = Flask(__name__)
 
@@ -26,6 +26,8 @@ recipe_df = recipe_df.rename(columns={'index': 'Dish'})
 sales_data = []
 
 def generate_sales_data(weeks):
+    global sales_data
+    sales_data = []  # Reset sales_data
     np.random.seed(42)
     for week in range(weeks):
         for dish in recipes.keys():
@@ -54,8 +56,8 @@ def update_and_train_model():
     weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
 
     # Select features and target variables
-    X = weekly_usage.drop(columns=['Week'])
-    y = weekly_usage.drop(columns=['Week', 'Sales'])
+    X = weekly_usage.drop(columns=['Week', 'Sales'])
+    y = weekly_usage.drop(columns=['Week'])
 
     # Split dataset
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -63,10 +65,18 @@ def update_and_train_model():
     # Train random forest model
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
+
+    # Save the trained model
+    joblib.dump(model, 'inventory_model.pkl')
+
     return model, X
 
 # Initial model training
 model, X = update_and_train_model()
+
+@app.route('/')
+def index():
+    return "Hello, World! The Flask app is running."
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -132,7 +142,7 @@ def manage_inventory():
         prob.solve()
         
         # Output suggested promotion quantity
-        promotion_plan = {var.name: var.varValue for var in promotion_vars.values() if var.varValue > 0}
+        promotion_plan = {var.name: var.varValue for var in prob.variables() if var.varValue > 0}
         
         # Simulate actual sales and update inventory
         for dish, promotions in promotion_plan.items():
@@ -149,3 +159,4 @@ def manage_inventory():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5001))
     app.run(debug=True, host='0.0.0.0', port=port)
+
