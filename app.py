@@ -22,9 +22,7 @@ recipes = {
     'Steamed Fish': {'Fish': 400, 'Ginger': 10, 'Cooking Wine': 10}
 }
 
-# Initial inventory and days in inventory
-inventory = {}
-days_in_inventory = {}
+# Initialize model
 model = None
 
 def simulate_sales_data(weeks=10):
@@ -59,7 +57,7 @@ def initialize_inventory(X, model):
     return inventory, days_in_inventory
 
 def train_model():
-    global model, inventory, days_in_inventory
+    global model
     
     try:
         sales_df = simulate_sales_data()
@@ -73,11 +71,12 @@ def train_model():
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
 
-        inventory, days_in_inventory = initialize_inventory(X, model)
-
         logging.info("Model training completed successfully.")
+        
+        return X
     except Exception as e:
         logging.error("Error during model training: %s", str(e))
+        return None
 
 @app.route('/')
 def home():
@@ -148,5 +147,7 @@ def promote():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    train_model()
+    X = train_model()
+    if X is not None:
+        inventory, days_in_inventory = initialize_inventory(X, model)
     app.run(debug=True)
