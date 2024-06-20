@@ -1,17 +1,12 @@
-import logging
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
 import pulp
 
 app = Flask(__name__)
-CORS(app)
-
-# Enable logging
-logging.basicConfig(level=logging.DEBUG)
 
 # Recipe data
 recipes = {
@@ -22,13 +17,19 @@ recipes = {
     'Steamed Fish': {'Fish': 400, 'Ginger': 10, 'Cooking Wine': 10}
 }
 
-# Initialize model
+# Initialize global variables
 model = None
-inventory = None
-days_in_inventory = None
+next_week_inventory = []
 
-def simulate_sales_data(weeks=10):
+def train_model():
+    global model, next_week_inventory
+    # Create recipe DataFrame
+    recipe_df = pd.DataFrame(recipes).T.reset_index()
+    recipe_df = recipe_df.rename(columns={'index': 'Dish'})
+    
+    # Simulate weekly sales data
     np.random.seed(42)
+    weeks = 10  # Assume 10 weeks of data
     sales_data = []
 
     for week in range(weeks):
@@ -36,105 +37,99 @@ def simulate_sales_data(weeks=10):
             sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
             sales_data.append([week + 1, dish, sales_count])
 
-    return pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
+    sales_df = pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
 
-def prepare_training_data(sales_df):
-    recipe_df = pd.DataFrame(recipes).T.reset_index().rename(columns={'index': 'Dish'})
+    # Merge recipe data and sales data
     merged_data = pd.merge(sales_df, recipe_df, on='Dish')
 
+    # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
     for ingredient in recipe_df.columns[1:]:
         merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
 
+    # Ensure there are no missing values and the types are correct
     merged_data = merged_data.fillna(0)
+
+    # Calculate total weekly ingredient usage
     weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
 
-    return weekly_usage
+    # Select features and target variables
+    X = weekly_usage.drop(columns=['Week'])
+    y = weekly_usage.drop(columns=['Week', 'Sales'])
 
-def initialize_inventory(X, model):
-    try:
-        next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
-        ingredients = list(X.columns)
-        inventory = {ingredients[i]: next_week_inventory[i] for i in range(len(ingredients))}
-        days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
+    # Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        return inventory, days_in_inventory
-    except IndexError as e:
-        logging.error("Error during inventory initialization: %s", str(e))
-        raise
+    # Train random forest model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
 
-def train_model():
-    global model, inventory, days_in_inventory
-    
-    try:
-        logging.info("Starting model training process.")
-        sales_df = simulate_sales_data()
-        logging.info("Simulated sales data generated.")
-        
-        weekly_usage = prepare_training_data(sales_df)
-        logging.info("Training data prepared.")
-        
-        logging.debug("Weekly usage data shape: %s", weekly_usage.shape)
-        logging.debug("Weekly usage data columns: %s", weekly_usage.columns)
+    # Predict
+    y_pred = model.predict(X_test)
 
-        X = weekly_usage.drop(columns=['Week'])
-        y = weekly_usage.drop(columns=['Week'])
+    # Evaluate model
+    mse = mean_squared_error(y_test, y_pred)
+    print(f"Mean Squared Error: {mse}")
 
-        logging.debug("Feature data shape: %s", X.shape)
-        logging.debug("Target data shape: %s", y.shape)
+    # Predict next week's inventory demand
+    next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
+    print("Predicted Inventory for Next Week:", next_week_inventory)
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        logging.info("Data split into training and test sets.")
+@app.route('/train', methods=['GET'])
+def train():
+    train_model()
+    return jsonify({"message": "Model trained successfully"})
 
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        logging.info("Model training completed successfully.")
-
-        inventory, days_in_inventory = initialize_inventory(X, model)
-        logging.info("Inventory initialized.")
-        
-        return True
-    except Exception as e:
-        logging.error("Error during model training: %s", str(e))
-        return False
-
-@app.route('/')
-def home():
-    return "Welcome to the Inventory Management System!"
-
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['GET'])
 def predict():
-    try:
-        if model is None:
-            raise ValueError("Model is not initialized.")
-        
-        data = request.json
-        X = pd.DataFrame([data['features']])
-        prediction = model.predict(X)[0]
-        return jsonify({'prediction': prediction.tolist()})
-    except Exception as e:
-        logging.error("Error during prediction: %s", str(e))
-        return jsonify({'error': str(e)}), 500
+    return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
 
-@app.route('/promote', methods=['POST'])
-def promote():
-    try:
-        data = request.json
-        inventory = data['inventory']
-        days_in_inventory = data['days_in_inventory']
-        profits = {
-            'Kung Pao Chicken': 20,
-            'Mapo Tofu': 15,
-            'Braised Pork': 25,
-            'Hot and Sour Soup': 10,
-            'Steamed Fish': 30
-        }
-        shelf_life = {
-            'Chicken': 5, 'Peanuts': 90, 'Bell Pepper': 7, 'Chili': 180,
-            'Tofu': 3, 'Ground Beef': 5, 'Sichuan Peppercorn': 365,
-            'Pork': 7, 'Soy Sauce': 365, 'Sugar': 365,
-            'Egg': 21, 'Wood Ear Mushroom': 180, 'Vinegar': 365,
-            'Fish': 5, 'Ginger': 30, 'Cooking Wine': 365
-        }
+@app.route('/simulate', methods=['POST'])
+def simulate():
+    global next_week_inventory
+    data = request.json
+    days = data.get('days', 70)
+    
+    inventory = {
+        'Chicken': next_week_inventory[0],
+        'Peanuts': next_week_inventory[1],
+        'Bell Pepper': next_week_inventory[2],
+        'Chili': next_week_inventory[3],
+        'Tofu': next_week_inventory[4],
+        'Ground Beef': next_week_inventory[5],
+        'Sichuan Peppercorn': next_week_inventory[6],
+        'Pork': next_week_inventory[7],
+        'Soy Sauce': next_week_inventory[8],
+        'Sugar': next_week_inventory[9],
+        'Egg': next_week_inventory[10],
+        'Wood Ear Mushroom': next_week_inventory[11],
+        'Vinegar': next_week_inventory[12],
+        'Fish': next_week_inventory[13],
+        'Ginger': next_week_inventory[14],
+        'Cooking Wine': next_week_inventory[15]
+    }
+
+    days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
+
+    profits = {
+        'Kung Pao Chicken': 20,
+        'Mapo Tofu': 15,
+        'Braised Pork': 25,
+        'Hot and Sour Soup': 10,
+        'Steamed Fish': 30
+    }
+
+    shelf_life = {
+        'Chicken': 5, 'Peanuts': 90, 'Bell Pepper': 7, 'Chili': 180,
+        'Tofu': 3, 'Ground Beef': 5, 'Sichuan Peppercorn': 365,
+        'Pork': 7, 'Soy Sauce': 365, 'Sugar': 365,
+        'Egg': 21, 'Wood Ear Mushroom': 180, 'Vinegar': 365,
+        'Fish': 5, 'Ginger': 30, 'Cooking Wine': 365
+    }
+
+    for day in range(1, days + 1):
+        print(f"Day {day}")
+
+        days_in_inventory = {ingredient: days_in_inventory[ingredient] + 1 for ingredient in days_in_inventory.keys()}
 
         shelf_life_factor = {
             ingredient: max(0, 1 - days_in_inventory[ingredient] / shelf_life[ingredient])
@@ -158,17 +153,27 @@ def promote():
 
         prob.solve()
 
-        promotion_plan = {var.name: var.varValue for var in promotion_vars.values() if var.varValue > 0}
+        print("Suggested Promotion Plan:")
+        for var in promotion_vars.values():
+            if var.varValue > 0:
+                print(f"{var.name}: {var.varValue}")
 
-        return jsonify({'promotion_plan': promotion_plan})
-    except Exception as e:
-        logging.error("Error during promotion planning: %s", str(e))
-        return jsonify({'error': str(e)}), 500
+        actual_sales = data.get('actual_sales', {})
+
+        for dish, counts in actual_sales.items():
+            if counts['promotions'] > 0:
+                for ingredient, amount in recipes[dish].items():
+                    inventory[ingredient] -= amount * counts['promotions']
+
+        for ingredient, days in days_in_inventory.items():
+            if days > shelf_life[ingredient]:
+                inventory[ingredient] = 0
+
+        print("Updated Inventory:")
+        print(inventory)
+        print("\n")
+
+    return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
 
 if __name__ == '__main__':
-    model_initialized = train_model()
-    if model_initialized:
-        logging.info("Starting Flask application.")
-        app.run(debug=True, port=5001)
-    else:
-        logging.error("Failed to initialize the model.")
+    app.run(debug=True)
