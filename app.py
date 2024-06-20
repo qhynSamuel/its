@@ -93,6 +93,7 @@ def train():
 def predict():
     global next_week_inventory
     try:
+        print(f"next_week_inventory at predict: {next_week_inventory}")
         if next_week_inventory.size == 0:
             print("next_week_inventory is empty in /predict endpoint")
             return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
@@ -105,6 +106,7 @@ def predict():
 def simulate():
     global next_week_inventory
     try:
+        print(f"next_week_inventory at simulate: {next_week_inventory}")
         if next_week_inventory.size == 0:
             print("next_week_inventory is empty in /simulate endpoint")
             return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
