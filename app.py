@@ -24,6 +24,8 @@ recipes = {
 
 # Initialize model
 model = None
+inventory = None
+days_in_inventory = None
 
 def simulate_sales_data(weeks=10):
     np.random.seed(42)
@@ -49,27 +51,39 @@ def prepare_training_data(sales_df):
     return weekly_usage
 
 def initialize_inventory(X, model):
-    next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
-    ingredients = list(X.columns)
-    inventory = {ingredients[i]: next_week_inventory[i] for i in range(len(ingredients))}
-    days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
+    try:
+        next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
+        ingredients = list(X.columns)
+        inventory = {ingredients[i]: next_week_inventory[i] for i in range(len(ingredients))}
+        days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
 
-    return inventory, days_in_inventory
+        return inventory, days_in_inventory
+    except IndexError as e:
+        logging.error("Error during inventory initialization: %s", str(e))
+        raise
 
 def train_model():
     global model, inventory, days_in_inventory
     
     try:
+        logging.info("Starting model training process.")
         sales_df = simulate_sales_data()
         logging.info("Simulated sales data generated.")
         
         weekly_usage = prepare_training_data(sales_df)
         logging.info("Training data prepared.")
         
+        logging.debug("Weekly usage data shape: %s", weekly_usage.shape)
+        logging.debug("Weekly usage data columns: %s", weekly_usage.columns)
+
         X = weekly_usage.drop(columns=['Week'])
-        y = weekly_usage.drop(columns=['Week', 'Sales'])
+        y = weekly_usage.drop(columns=['Week'])
+
+        logging.debug("Feature data shape: %s", X.shape)
+        logging.debug("Target data shape: %s", y.shape)
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        logging.info("Data split into training and test sets.")
 
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
@@ -154,6 +168,7 @@ def promote():
 if __name__ == '__main__':
     model_initialized = train_model()
     if model_initialized:
-        app.run(debug=True)
+        logging.info("Starting Flask application.")
+        app.run(debug=True, port=5001)
     else:
         logging.error("Failed to initialize the model.")
