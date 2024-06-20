@@ -8,7 +8,7 @@ import pulp
 
 app = Flask(__name__)
 
-# Recipe data
+# 菜谱数据
 recipes = {
     'Kung Pao Chicken': {'Chicken': 200, 'Peanuts': 50, 'Bell Pepper': 30, 'Chili': 10},
     'Mapo Tofu': {'Tofu': 250, 'Ground Beef': 100, 'Sichuan Peppercorn': 5},
@@ -17,79 +17,85 @@ recipes = {
     'Steamed Fish': {'Fish': 400, 'Ginger': 10, 'Cooking Wine': 10}
 }
 
-# Initialize global variables
+# 初始化全局变量
 model = None
 next_week_inventory = []
 
 def train_model():
     global model, next_week_inventory
-    # Create recipe DataFrame
+    # 创建菜谱DataFrame
     recipe_df = pd.DataFrame(recipes).T.reset_index()
     recipe_df = recipe_df.rename(columns={'index': 'Dish'})
     
-    # Simulate weekly sales data
+    # 模拟每周销售数据
     np.random.seed(42)
-    weeks = 10  # Assume 10 weeks of data
+    weeks = 10  # 假设10周的数据
     sales_data = []
 
     for week in range(weeks):
         for dish in recipes.keys():
-            sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
+            sales_count = np.random.randint(50, 200)  # 每道菜每周的销售量
             sales_data.append([week + 1, dish, sales_count])
 
     sales_df = pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
 
-    # Merge recipe data and sales data
+    # 合并菜谱数据和销售数据
     merged_data = pd.merge(sales_df, recipe_df, on='Dish')
 
-    # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
+    # 按销售数量乘以配料量以获得每周的配料使用量
     for ingredient in recipe_df.columns[1:]:
         merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
 
-    # Ensure there are no missing values and the types are correct
+    # 确保没有缺失值，并且类型正确
     merged_data = merged_data.fillna(0)
 
-    # Calculate total weekly ingredient usage
+    # 计算每周总的配料使用量
     weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
 
-    # Select features and target variables
+    # 选择特征和目标变量
     X = weekly_usage.drop(columns=['Week'])
     y = weekly_usage.drop(columns=['Week', 'Sales'])
 
-    # Split dataset
+    # 拆分数据集
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Train random forest model
+    # 训练随机森林模型
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
 
-    # Predict
+    # 预测
     y_pred = model.predict(X_test)
 
-    # Evaluate model
+    # 评估模型
     mse = mean_squared_error(y_test, y_pred)
-    print(f"Mean Squared Error: {mse}")
+    print(f"均方误差: {mse}")
 
-    # Predict next week's inventory demand
+    # 预测下周的库存需求
     next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
-    print("Predicted Inventory for Next Week:", next_week_inventory)
+    print("下周预测库存:", next_week_inventory)
 
 @app.route('/')
 def home():
-    return "Welcome to the Restaurant Inventory Management API"
+    return "欢迎来到库存管理系统！"
 
 @app.route('/train', methods=['GET'])
 def train():
     train_model()
-    return jsonify({"message": "Model trained successfully"})
+    return jsonify({"message": "模型训练成功"})
 
 @app.route('/predict', methods=['GET'])
 def predict():
-    return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
+    global next_week_inventory
+    if not next_week_inventory:
+        return jsonify({"error": "预测库存为空，请先训练模型"}), 400
+    return jsonify({"下周预测库存": next_week_inventory.tolist()})
 
 @app.route('/simulate', methods=['POST'])
 def simulate():
     global next_week_inventory
+    if not next_week_inventory:
+        return jsonify({"error": "预测库存为空，请先训练模型"}), 400
+
     data = request.json
     days = data.get('days', 70)
     
@@ -157,7 +163,7 @@ def simulate():
 
         prob.solve()
 
-        print("Suggested Promotion Plan:")
+        print("建议促销方案:")
         for var in promotion_vars.values():
             if var.varValue > 0:
                 print(f"{var.name}: {var.varValue}")
@@ -173,11 +179,11 @@ def simulate():
             if days > shelf_life[ingredient]:
                 inventory[ingredient] = 0
 
-        print("Updated Inventory:")
+        print("更新后的库存:")
         print(inventory)
         print("\n")
 
-    return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
+    return jsonify({"message": "模拟完成", "更新后的库存": inventory})
 
 if __name__ == '__main__':
     app.run(debug=True)
