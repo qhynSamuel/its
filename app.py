@@ -23,59 +23,62 @@ next_week_inventory = []
 
 def train_model():
     global model, next_week_inventory
-    # Create recipe DataFrame
-    recipe_df = pd.DataFrame(recipes).T.reset_index()
-    recipe_df = recipe_df.rename(columns={'index': 'Dish'})
-    
-    # Simulate weekly sales data
-    np.random.seed(42)
-    weeks = 10  # Assume 10 weeks of data
-    sales_data = []
+    try:
+        # Create recipe DataFrame
+        recipe_df = pd.DataFrame(recipes).T.reset_index()
+        recipe_df = recipe_df.rename(columns={'index': 'Dish'})
+        
+        # Simulate weekly sales data
+        np.random.seed(42)
+        weeks = 10  # Assume 10 weeks of data
+        sales_data = []
 
-    for week in range(weeks):
-        for dish in recipes.keys():
-            sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
-            sales_data.append([week + 1, dish, sales_count])
+        for week in range(weeks):
+            for dish in recipes.keys():
+                sales_count = np.random.randint(50, 200)  # Sales quantity per dish per week
+                sales_data.append([week + 1, dish, sales_count])
 
-    sales_df = pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
+        sales_df = pd.DataFrame(sales_data, columns=['Week', 'Dish', 'Sales'])
 
-    # Merge recipe data and sales data
-    merged_data = pd.merge(sales_df, recipe_df, on='Dish')
+        # Merge recipe data and sales data
+        merged_data = pd.merge(sales_df, recipe_df, on='Dish')
 
-    # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
-    for ingredient in recipe_df.columns[1:]:
-        merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
+        # Multiply ingredient amounts by sales quantity to get weekly ingredient usage
+        for ingredient in recipe_df.columns[1:]:
+            merged_data[ingredient] = merged_data[ingredient] * merged_data['Sales']
 
-    # Ensure there are no missing values and the types are correct
-    merged_data = merged_data.fillna(0)
+        # Ensure there are no missing values and the types are correct
+        merged_data = merged_data.fillna(0)
 
-    # Calculate total weekly ingredient usage
-    weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
+        # Calculate total weekly ingredient usage
+        weekly_usage = merged_data.groupby('Week').sum(numeric_only=True).reset_index()
 
-    # Select features and target variables
-    X = weekly_usage.drop(columns=['Week'])
-    y = weekly_usage.drop(columns=['Week', 'Sales'])
+        # Select features and target variables
+        X = weekly_usage.drop(columns=['Week'])
+        y = weekly_usage.drop(columns=['Week', 'Sales'])
 
-    # Split dataset
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # Split dataset
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Train random forest model
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+        # Train random forest model
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
 
-    # Predict
-    y_pred = model.predict(X_test)
+        # Predict
+        y_pred = model.predict(X_test)
 
-    # Evaluate model
-    mse = mean_squared_error(y_test, y_pred)
-    print(f"Mean Squared Error: {mse}")
+        # Evaluate model
+        mse = mean_squared_error(y_test, y_pred)
+        print(f"Mean Squared Error: {mse}")
 
-    # Predict next week's inventory demand
-    next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
-    print("Predicted Inventory for Next Week:", next_week_inventory)
+        # Predict next week's inventory demand
+        next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
+        print("Predicted Inventory for Next Week:", next_week_inventory)
 
-    # Debugging output
-    print(f"next_week_inventory: {next_week_inventory}")
+        # Debugging output
+        print(f"next_week_inventory: {next_week_inventory}")
+    except Exception as e:
+        print(f"Error during model training: {e}")
 
 @app.route('/')
 def home():
@@ -89,9 +92,13 @@ def train():
 @app.route('/predict', methods=['GET'])
 def predict():
     global next_week_inventory
-    if not next_week_inventory:
-        return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
-    return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
+    try:
+        if not next_week_inventory:
+            return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
+        return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        return jsonify({"error": "An error occurred during prediction."}), 500
 
 @app.route('/simulate', methods=['POST'])
 def simulate():
