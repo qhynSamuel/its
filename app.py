@@ -19,7 +19,7 @@ recipes = {
 
 # Initialize global variables
 model = None
-next_week_inventory = []
+next_week_inventory = np.array([])
 
 def train_model():
     global model, next_week_inventory
@@ -93,7 +93,7 @@ def train():
 def predict():
     global next_week_inventory
     try:
-        if not next_week_inventory:
+        if next_week_inventory.size == 0:
             return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
         return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
     except Exception as e:
@@ -103,7 +103,7 @@ def predict():
 @app.route('/simulate', methods=['POST'])
 def simulate():
     global next_week_inventory
-    if not next_week_inventory:
+    if next_week_inventory.size == 0:
         return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
 
     data = request.json
