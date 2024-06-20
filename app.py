@@ -74,6 +74,9 @@ def train_model():
     next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
     print("Predicted Inventory for Next Week:", next_week_inventory)
 
+    # Debugging output
+    print(f"next_week_inventory: {next_week_inventory}")
+
 @app.route('/')
 def home():
     return "Welcome to the Inventory Management System!"
