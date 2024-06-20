@@ -74,6 +74,10 @@ def train_model():
     next_week_inventory = model.predict(pd.DataFrame([X.iloc[-1].values], columns=X.columns))[0]
     print("Predicted Inventory for Next Week:", next_week_inventory)
 
+@app.route('/')
+def home():
+    return "Welcome to the Restaurant Inventory Management API"
+
 @app.route('/train', methods=['GET'])
 def train():
     train_model()
