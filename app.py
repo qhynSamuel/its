@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
@@ -5,7 +6,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import pulp
-import logging
 
 app = Flask(__name__)
 CORS(app)
@@ -57,12 +57,15 @@ def initialize_inventory(X, model):
     return inventory, days_in_inventory
 
 def train_model():
-    global model
+    global model, inventory, days_in_inventory
     
     try:
         sales_df = simulate_sales_data()
+        logging.info("Simulated sales data generated.")
+        
         weekly_usage = prepare_training_data(sales_df)
-
+        logging.info("Training data prepared.")
+        
         X = weekly_usage.drop(columns=['Week'])
         y = weekly_usage.drop(columns=['Week', 'Sales'])
 
@@ -70,13 +73,15 @@ def train_model():
 
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
-
         logging.info("Model training completed successfully.")
+
+        inventory, days_in_inventory = initialize_inventory(X, model)
+        logging.info("Inventory initialized.")
         
-        return X
+        return True
     except Exception as e:
         logging.error("Error during model training: %s", str(e))
-        return None
+        return False
 
 @app.route('/')
 def home():
@@ -147,7 +152,8 @@ def promote():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    X = train_model()
-    if X is not None:
-        inventory, days_in_inventory = initialize_inventory(X, model)
-    app.run(debug=True)
+    model_initialized = train_model()
+    if model_initialized:
+        app.run(debug=True)
+    else:
+        logging.error("Failed to initialize the model.")
