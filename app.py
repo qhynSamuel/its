@@ -94,6 +94,7 @@ def predict():
     global next_week_inventory
     try:
         if next_week_inventory.size == 0:
+            print("next_week_inventory is empty in /predict endpoint")
             return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
         return jsonify({"Predicted Inventory for Next Week": next_week_inventory.tolist()})
     except Exception as e:
@@ -103,97 +104,102 @@ def predict():
 @app.route('/simulate', methods=['POST'])
 def simulate():
     global next_week_inventory
-    if next_week_inventory.size == 0:
-        return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
+    try:
+        if next_week_inventory.size == 0:
+            print("next_week_inventory is empty in /simulate endpoint")
+            return jsonify({"error": "Predicted inventory is empty. Please train the model first."}), 400
 
-    data = request.json
-    days = data.get('days', 70)
-    
-    inventory = {
-        'Chicken': next_week_inventory[0],
-        'Peanuts': next_week_inventory[1],
-        'Bell Pepper': next_week_inventory[2],
-        'Chili': next_week_inventory[3],
-        'Tofu': next_week_inventory[4],
-        'Ground Beef': next_week_inventory[5],
-        'Sichuan Peppercorn': next_week_inventory[6],
-        'Pork': next_week_inventory[7],
-        'Soy Sauce': next_week_inventory[8],
-        'Sugar': next_week_inventory[9],
-        'Egg': next_week_inventory[10],
-        'Wood Ear Mushroom': next_week_inventory[11],
-        'Vinegar': next_week_inventory[12],
-        'Fish': next_week_inventory[13],
-        'Ginger': next_week_inventory[14],
-        'Cooking Wine': next_week_inventory[15]
-    }
-
-    days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
-
-    profits = {
-        'Kung Pao Chicken': 20,
-        'Mapo Tofu': 15,
-        'Braised Pork': 25,
-        'Hot and Sour Soup': 10,
-        'Steamed Fish': 30
-    }
-
-    shelf_life = {
-        'Chicken': 5, 'Peanuts': 90, 'Bell Pepper': 7, 'Chili': 180,
-        'Tofu': 3, 'Ground Beef': 5, 'Sichuan Peppercorn': 365,
-        'Pork': 7, 'Soy Sauce': 365, 'Sugar': 365,
-        'Egg': 21, 'Wood Ear Mushroom': 180, 'Vinegar': 365,
-        'Fish': 5, 'Ginger': 30, 'Cooking Wine': 365
-    }
-
-    for day in range(1, days + 1):
-        print(f"Day {day}")
-
-        days_in_inventory = {ingredient: days_in_inventory[ingredient] + 1 for ingredient in days_in_inventory.keys()}
-
-        shelf_life_factor = {
-            ingredient: max(0, 1 - days_in_inventory[ingredient] / shelf_life[ingredient])
-            for ingredient in shelf_life.keys()
+        data = request.json
+        days = data.get('days', 70)
+        
+        inventory = {
+            'Chicken': next_week_inventory[0],
+            'Peanuts': next_week_inventory[1],
+            'Bell Pepper': next_week_inventory[2],
+            'Chili': next_week_inventory[3],
+            'Tofu': next_week_inventory[4],
+            'Ground Beef': next_week_inventory[5],
+            'Sichuan Peppercorn': next_week_inventory[6],
+            'Pork': next_week_inventory[7],
+            'Soy Sauce': next_week_inventory[8],
+            'Sugar': next_week_inventory[9],
+            'Egg': next_week_inventory[10],
+            'Wood Ear Mushroom': next_week_inventory[11],
+            'Vinegar': next_week_inventory[12],
+            'Fish': next_week_inventory[13],
+            'Ginger': next_week_inventory[14],
+            'Cooking Wine': next_week_inventory[15]
         }
 
-        prob = pulp.LpProblem("PromotionPlan", pulp.LpMaximize)
+        days_in_inventory = {ingredient: 0 for ingredient in inventory.keys()}
 
-        promotion_vars = {dish: pulp.LpVariable(dish, lowBound=0, cat='Integer') for dish in recipes.keys()}
+        profits = {
+            'Kung Pao Chicken': 20,
+            'Mapo Tofu': 15,
+            'Braised Pork': 25,
+            'Hot and Sour Soup': 10,
+            'Steamed Fish': 30
+        }
 
-        profit_weight = 0.7
-        shelf_life_weight = 0.3
+        shelf_life = {
+            'Chicken': 5, 'Peanuts': 90, 'Bell Pepper': 7, 'Chili': 180,
+            'Tofu': 3, 'Ground Beef': 5, 'Sichuan Peppercorn': 365,
+            'Pork': 7, 'Soy Sauce': 365, 'Sugar': 365,
+            'Egg': 21, 'Wood Ear Mushroom': 180, 'Vinegar': 365,
+            'Fish': 5, 'Ginger': 30, 'Cooking Wine': 365
+        }
 
-        prob += pulp.lpSum(profit_weight * profits[dish] * promotion_vars[dish] +
-                           shelf_life_weight * pulp.lpSum(shelf_life_factor[ingredient] * promotion_vars[dish] * recipes[dish].get(ingredient, 0)
-                                                          for ingredient in recipes[dish].keys())
-                           for dish in recipes.keys())
+        for day in range(1, days + 1):
+            print(f"Day {day}")
 
-        for ingredient in inventory.keys():
-            prob += pulp.lpSum(promotion_vars[dish] * recipes[dish].get(ingredient, 0) for dish in recipes.keys()) <= inventory[ingredient]
+            days_in_inventory = {ingredient: days_in_inventory[ingredient] + 1 for ingredient in days_in_inventory.keys()}
 
-        prob.solve()
+            shelf_life_factor = {
+                ingredient: max(0, 1 - days_in_inventory[ingredient] / shelf_life[ingredient])
+                for ingredient in shelf_life.keys()
+            }
 
-        print("Suggested Promotion Plan:")
-        for var in promotion_vars.values():
-            if var.varValue > 0:
-                print(f"{var.name}: {var.varValue}")
+            prob = pulp.LpProblem("PromotionPlan", pulp.LpMaximize)
 
-        actual_sales = data.get('actual_sales', {})
+            promotion_vars = {dish: pulp.LpVariable(dish, lowBound=0, cat='Integer') for dish in recipes.keys()}
 
-        for dish, counts in actual_sales.items():
-            if counts['promotions'] > 0:
-                for ingredient, amount in recipes[dish].items():
-                    inventory[ingredient] -= amount * counts['promotions']
+            profit_weight = 0.7
+            shelf_life_weight = 0.3
 
-        for ingredient, days in days_in_inventory.items():
-            if days > shelf_life[ingredient]:
-                inventory[ingredient] = 0
+            prob += pulp.lpSum(profit_weight * profits[dish] * promotion_vars[dish] +
+                               shelf_life_weight * pulp.lpSum(shelf_life_factor[ingredient] * promotion_vars[dish] * recipes[dish].get(ingredient, 0)
+                                                              for ingredient in recipes[dish].keys())
+                               for dish in recipes.keys())
 
-        print("Updated Inventory:")
-        print(inventory)
-        print("\n")
+            for ingredient in inventory.keys():
+                prob += pulp.lpSum(promotion_vars[dish] * recipes[dish].get(ingredient, 0) for dish in recipes.keys()) <= inventory[ingredient]
 
-    return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
+            prob.solve()
+
+            print("Suggested Promotion Plan:")
+            for var in promotion_vars.values():
+                if var.varValue > 0:
+                    print(f"{var.name}: {var.varValue}")
+
+            actual_sales = data.get('actual_sales', {})
+
+            for dish, counts in actual_sales.items():
+                if counts['promotions'] > 0:
+                    for ingredient, amount in recipes[dish].items():
+                        inventory[ingredient] -= amount * counts['promotions']
+
+            for ingredient, days in days_in_inventory.items():
+                if days > shelf_life[ingredient]:
+                    inventory[ingredient] = 0
+
+            print("Updated Inventory:")
+            print(inventory)
+            print("\n")
+
+        return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
+    except Exception as e:
+        print(f"Error during simulation: {e}")
+        return jsonify({"error": "An error occurred during simulation."}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
