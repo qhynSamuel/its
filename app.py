@@ -198,6 +198,11 @@ def simulate():
             print(inventory)
             print("\n")
 
+        # Ensure no negative values in inventory
+        for ingredient, amount in inventory.items():
+            if amount < 0:
+                inventory[ingredient] = 0
+
         return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
     except Exception as e:
         print(f"Error during simulation: {e}")
