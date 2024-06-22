@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import pulp
+import os
 
 app = Flask(__name__)
 
@@ -180,4 +181,5 @@ def simulate():
     return jsonify({"message": "Simulation complete", "Updated Inventory": inventory})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
